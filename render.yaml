@@ -9,7 +9,7 @@ services:
     runtime: node
     plan: starter
     region: oregon
-    buildCommand: npm install && npm run build && npx prisma db push && npx tsx prisma/seed.ts
+    buildCommand: npm install --include=dev && npm run build && npx prisma db push && npx tsx prisma/seed.ts
     startCommand: npm run start
     envVars:
       - key: DATABASE_URL
