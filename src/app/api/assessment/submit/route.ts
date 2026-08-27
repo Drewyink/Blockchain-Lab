@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
-import { getSessionUserId } from "@/lib/auth";
-import { SandboxState, repairFrom, validateChain } from "@/lib/sandbox-engine";
-import { LEARNING_PATHS, LEVEL1_CREDENTIAL } from "@/lib/curriculum";
-import { calculateMasteryScore, logEvidence, recordCompetencyDemonstration } from "@/lib/evidence";
+import { prisma } from "../../../../lib/db";
+import { getSessionUserId } from "../../../../lib/auth";
+import { SandboxState, repairFrom, validateChain } from "../../../../lib/sandbox-engine";
+import { LEARNING_PATHS, LEVEL1_CREDENTIAL } from "../../../../lib/curriculum";
+import { calculateMasteryScore, logEvidence, recordCompetencyDemonstration } from "../../../../lib/evidence";
 import { randomBytes } from "crypto";
 
 const ACADEMY_SLUG = "blockchain";
