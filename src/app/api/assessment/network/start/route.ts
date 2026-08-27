@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
-import { getSessionUserId } from "@/lib/auth";
-import { SandboxState, setupMaliciousNetwork, generateFork } from "@/lib/sandbox-engine";
-import { LEARNING_PATHS } from "@/lib/curriculum";
+import { prisma } from "../../../../../../lib/db";
+import { getSessionUserId } from "../../../../../../lib/auth";
+import { SandboxState, setupMaliciousNetwork, generateFork } from "../../../../../../lib/sandbox-engine";
+import { LEARNING_PATHS } from "../../../../../../lib/curriculum";
 
 const ACADEMY_SLUG = "blockchain";
 const MISSION_SLUG = "n06-network-assessment";
