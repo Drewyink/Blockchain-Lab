@@ -1,0 +1,292 @@
+// Echolink Simulation Engine — core schema
+// Design principle: the engine owns learning, the sandbox owns technical
+// state, the competency engine owns proof. Blockchain is the first academy
+// running on this engine — nothing here is blockchain-specific except the
+// seeded content rows themselves.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Identity & organizations ----------
+
+enum OrgRole {
+  OWNER
+  INSTRUCTOR
+  ENTERPRISE_ADMIN
+  MEMBER
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  displayName  String
+  createdAt    DateTime @default(now())
+
+  memberships       OrganizationMember[]
+  learnerCompetencies LearnerCompetency[]
+  missionAttempts   MissionAttempt[]
+  evidenceEvents    EvidenceEvent[]
+  hintEvents        HintEvent[]
+  sandboxInstances  SandboxInstance[]
+  assessmentInstances AssessmentInstance[]
+  credentials       Credential[]
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  kind      String   @default("individual") // individual | university | company
+  createdAt DateTime @default(now())
+
+  members OrganizationMember[]
+}
+
+model OrganizationMember {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  role           OrgRole  @default(MEMBER)
+  joinedAt       DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  user         User          @relation(fields: [userId], references: [id])
+
+  @@unique([organizationId, userId])
+}
+
+// ---------- Academy / curriculum structure ----------
+
+model Academy {
+  id          String @id @default(cuid())
+  slug        String @unique // e.g. "blockchain"
+  name        String
+  description String
+
+  learningPaths LearningPath[]
+  competencies  Competency[]
+  scenarioPacks ScenarioPack[]
+}
+
+model LearningPath {
+  id        String @id @default(cuid())
+  academyId String
+  slug      String // e.g. "blockchain-foundations-l1"
+  name      String
+  level     Int    @default(1)
+  order     Int    @default(0)
+
+  academy  Academy   @relation(fields: [academyId], references: [id])
+  missions Mission[]
+  credentialRequirements CredentialRequirement[]
+
+  @@unique([academyId, slug])
+}
+
+model Mission {
+  id             String  @id @default(cuid())
+  learningPathId String
+  slug          String  // e.g. "m01-transaction-data"
+  order         Int
+  title         String
+  problemPrompt String  @db.Text // the discovery question, not a lecture
+  narrative     String  @db.Text
+  primitiveKey  String  // which visual primitive component this mission uses
+  mode          String  @default("practice") // practice | assessment
+  config        Json    // mission-specific parameters (fields, thresholds, seed data)
+
+  learningPath   LearningPath        @relation(fields: [learningPathId], references: [id])
+  competencies   MissionCompetency[]
+  attempts       MissionAttempt[]
+  hintDefinitions HintDefinition[]
+
+  @@unique([learningPathId, slug])
+}
+
+// ---------- Competency graph (the real backbone) ----------
+
+model Competency {
+  id          String @id @default(cuid())
+  academyId   String
+  code        String // e.g. "BC-HASH-001"
+  name        String
+  description String @db.Text
+  dependsOnCode String? // parent competency code, for graph edges
+
+  academy  Academy @relation(fields: [academyId], references: [id])
+  missions MissionCompetency[]
+  learnerRecords LearnerCompetency[]
+  credentialRequirements CredentialRequirement[]
+
+  @@unique([academyId, code])
+}
+
+model MissionCompetency {
+  id           String @id @default(cuid())
+  missionId    String
+  competencyId String
+  weight       Int    @default(1) // relative weight within mission scoring
+
+  mission    Mission    @relation(fields: [missionId], references: [id])
+  competency Competency @relation(fields: [competencyId], references: [id])
+
+  @@unique([missionId, competencyId])
+}
+
+// mastery per learner per competency — independent of which mission/course path
+model LearnerCompetency {
+  id           String   @id @default(cuid())
+  userId       String
+  competencyId String
+  masteryScore Int      @default(0) // 0-100, rolls up from demonstrations
+  demonstrated Boolean  @default(false)
+  demonstratedInAssessment Boolean @default(false)
+  updatedAt    DateTime @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id])
+  competency Competency @relation(fields: [competencyId], references: [id])
+
+  @@unique([userId, competencyId])
+}
+
+// ---------- Sandbox / persistent technical state ----------
+
+model SandboxInstance {
+  id        String   @id @default(cuid())
+  userId    String
+  academyId String
+  state     Json     // e.g. { blocks: [...], keypair: {...} } — opaque to the engine
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, academyId])
+}
+
+// a frozen fork of sandbox state used for a formal assessment, so
+// certification never destroys the learner's practice environment
+model AssessmentInstance {
+  id          String   @id @default(cuid())
+  userId      String
+  missionId   String
+  snapshot    Json     // forked sandbox state at assessment start
+  status      String   @default("in_progress") // in_progress | passed | failed
+  score       Int?
+  attemptsUsed Int     @default(0)
+  hintsUsed   Int      @default(0)
+  startedAt   DateTime @default(now())
+  completedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+// ---------- Attempts, evidence, mentor ----------
+
+model MissionAttempt {
+  id         String   @id @default(cuid())
+  userId     String
+  missionId  String
+  mode       String   // practice | assessment
+  status     String   // success | failure
+  scorePct   Int?
+  attemptNum Int
+  createdAt  DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id])
+  mission Mission @relation(fields: [missionId], references: [id])
+}
+
+// every meaningful learner action — this is what a credential is built from
+model EvidenceEvent {
+  id           String   @id @default(cuid())
+  userId       String
+  missionSlug  String
+  competencyCode String?
+  action       String   // e.g. DETECT_HASH_MISMATCH, SIGN_TRANSACTION, ATTEMPT_BLOCK_BUILD
+  result       String   // success | failure
+  hintLevel    Int      @default(0)
+  attemptNum   Int      @default(1)
+  mode         String   @default("practice")
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model HintDefinition {
+  id         String @id @default(cuid())
+  missionId  String
+  errorCode  String // e.g. PREVIOUS_HASH_MISMATCH
+  level      Int    // 1,2,3 — escalation ladder; level 99 = "show me" explanation
+  text       String @db.Text
+
+  mission Mission @relation(fields: [missionId], references: [id])
+
+  @@unique([missionId, errorCode, level])
+}
+
+model HintEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  missionSlug String
+  errorCode String
+  level     Int
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+// ---------- Badges & certification ----------
+
+model Badge {
+  id          String @id @default(cuid())
+  code        String @unique // e.g. "BC-HASHING-INTEGRITY"
+  name        String
+  description String @db.Text
+}
+
+model Credential {
+  id            String   @id @default(cuid())
+  userId        String
+  code          String   // e.g. "BLOCKCHAIN-FOUNDATIONS-L1"
+  title         String
+  verificationId String  @unique
+  issuedAt      DateTime @default(now())
+  competencySnapshot Json // named competency scores at time of issuance
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model CredentialRequirement {
+  id             String @id @default(cuid())
+  learningPathId String
+  competencyId   String
+  minMastery     Int    @default(70)
+
+  learningPath LearningPath @relation(fields: [learningPathId], references: [id])
+  competency   Competency   @relation(fields: [competencyId], references: [id])
+
+  @@unique([learningPathId, competencyId])
+}
+
+// ---------- Scenario packs (same competency, different industry skin) ----------
+
+model ScenarioPack {
+  id        String @id @default(cuid())
+  academyId String
+  slug      String // e.g. "pharma-batch-tampering"
+  name      String
+  industry  String
+  content   Json   // overrides for narrative/data per mission
+
+  academy Academy @relation(fields: [academyId], references: [id])
+
+  @@unique([academyId, slug])
+}
